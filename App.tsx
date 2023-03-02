@@ -4,7 +4,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import Cell from "./Cell";
 
 type TransactionResponse = {
-  transactions: Transaction[];
+  transactions?: Transaction[];
   hasMore: boolean;
 };
 
@@ -20,50 +20,65 @@ export type Transaction = {
 
 const BASE_URL = "https://assignment.alza.app/transactions";
 
-// from https://stackoverflow.com/questions/37230555/get-with-query-string-with-fetch-in-react-native
-function objToQueryString(obj) {
-  const keyValuePairs = new Array<string>();
-  for (const key in obj) {
-    keyValuePairs.push(
-      encodeURIComponent(key) + "=" + encodeURIComponent(obj[key])
-    );
-  }
-  return keyValuePairs.join("&");
-}
-
 export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const lastTransactionId = transactions[transactions.length - 1]?.id;
 
-  const defaultDate = new Date();
+  const [fromDate, setFromDate] = useState<Date>(null);
+  const [toDate, setToDate] = useState<Date>(null);
+  const isFiltering = toDate !== null || fromDate !== null;
 
-  const [fromDate, setFromDate] = useState(defaultDate);
-  const [toDate, setToDate] = useState(defaultDate);
-
-  const fetchData = useCallback(() => {
-    const queryParams = objToQueryString({
-      ...(hasMore && { startingAfter: lastTransactionId }),
-      ...(fromDate !== defaultDate && { dateGTE: fromDate.getTime() }),
-      ...(toDate !== defaultDate && { dateLTE: toDate.getTime() }),
-      ...((fromDate !== defaultDate || toDate !== defaultDate) && {
-        limit: 100,
-      }),
-    });
-
-    fetch(`${BASE_URL}?${queryParams}`, { method: "GET" })
+  const fetchMore = useCallback(() => {
+    fetch(
+      `${BASE_URL}?${hasMore ? "startingAfter=" + lastTransactionId : ""}`,
+      { method: "GET" }
+    )
       .then((response) => response.json())
       .then((responseJson: TransactionResponse) => {
-        setTransactions(transactions.concat(responseJson.transactions));
+        if (responseJson.transactions && responseJson.transactions.length) {
+          setTransactions(transactions.concat(responseJson.transactions));
+        }
         setHasMore(responseJson.hasMore);
       })
       .catch((e) => {
-        alert(JSON.stringify(e));
         console.error(e);
       });
-  }, [fromDate, toDate, hasMore]);
+  }, [hasMore, transactions]);
 
-  useEffect(fetchData, [fromDate, toDate]);
+  const fetchFilters = useCallback(() => {
+    const URL = `${BASE_URL}?limit=100${
+      fromDate !== null ? "&dateGTE=" + fromDate.getTime() / 1000 : ""
+    }${toDate !== null ? "&dateLTE=" + toDate.getTime() / 1000 : ""}`;
+
+    fetch(URL, { method: "GET" })
+      .then((response) => response.json())
+      .then((responseJson: TransactionResponse) => {
+        if (responseJson.transactions && responseJson.transactions.length) {
+          setTransactions(responseJson.transactions);
+        } else {
+          setTransactions([]);
+        }
+        setHasMore(responseJson.hasMore);
+      })
+      .catch((e) => {
+        console.error(e);
+      });
+  }, [fromDate, toDate]);
+
+  useEffect(() => {
+    fetch(BASE_URL, { method: "GET" })
+      .then((response) => response.json())
+      .then((responseJson) => {
+        if (responseJson.transactions && responseJson.transactions.length) {
+          setTransactions(responseJson.transactions);
+        }
+        setHasMore(responseJson.hasMore);
+      })
+      .catch((e) => {
+        console.error(e);
+      });
+  }, []);
 
   const renderItem = ({ item }: { item: Transaction }) => (
     <Cell transaction={item} />
@@ -75,27 +90,35 @@ export default function App() {
         <Text>{"Transactions Before: "}</Text>
         <DateTimePicker
           mode="date"
-          value={fromDate}
-          onChange={(__event, selectedDate) => setFromDate(selectedDate)}
+          value={toDate || new Date()}
+          onChange={(__event, selectedDate) => {
+            setToDate(selectedDate);
+            fetchFilters();
+          }}
         />
       </View>
       <View style={styles.datePicker}>
         <Text>{"Transactions After: "}</Text>
         <DateTimePicker
           mode="date"
-          value={toDate}
-          onChange={(__event, selectedDate) => setToDate(selectedDate)}
+          value={fromDate || new Date()}
+          onChange={(__event, selectedDate) => {
+            setFromDate(selectedDate);
+            fetchFilters();
+          }}
         />
       </View>
+
       <FlatList
         data={transactions}
         renderItem={renderItem}
-        keyExtractor={(item: Transaction) => item.id}
+        keyExtractor={(item: Transaction, index) => `index_${index}_${item.id}`}
         onEndReached={() => {
-          if (hasMore || transactions.length === 0) {
-            fetchData();
+          if (!isFiltering && hasMore) {
+            fetchMore();
           }
         }}
+        ListEmptyComponent={<Text>No results found.</Text>}
       />
     </SafeAreaView>
   );

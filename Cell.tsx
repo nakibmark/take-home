@@ -6,8 +6,12 @@ const USD = new Intl.NumberFormat("en-US", {
   currency: "USD",
 });
 
-export const Cell = ({ transaction }: { transaction: Transaction }) => {
-  const transactionDate = new Date(transaction.date * 1000);
+export const Cell = ({
+  transaction,
+}: {
+  transaction: Transaction | undefined;
+}) => {
+  const transactionDate = new Date(transaction?.date * 1000 ?? 0);
 
   return (
     <View style={styles.cell}>
